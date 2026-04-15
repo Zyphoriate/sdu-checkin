@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+data/*
+!data/.gitkeep
+tests/
+task_plan.md
+findings.md
+progress.md

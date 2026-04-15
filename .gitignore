@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.local
+.ace-tool/
+.codex
+task_plan.md
+findings.md
+progress.md
+data/*
+!data/.gitkeep
