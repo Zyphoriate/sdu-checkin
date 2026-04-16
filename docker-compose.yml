@@ -1,6 +1,6 @@
 services:
   auto-checkin:
-    build: .
+    image: ghcr.io/zyphoriate/sdu-checkin:main
     container_name: auto-checkin
     restart: unless-stopped
     ports:
