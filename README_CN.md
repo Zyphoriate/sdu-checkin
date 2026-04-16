@@ -47,8 +47,36 @@ python3 -c "from app.auth import hash_admin_password; print(hash_admin_password(
 
 ### 2. 使用 Docker 运行
 
+创建 `docker-compose.yml`：
+
+```yaml
+services:
+  auto-checkin:
+    image: ghcr.io/zyphoriate/sdu-checkin:main
+    container_name: auto-checkin
+    restart: unless-stopped
+    ports:
+      - "${CHECKIN_BIND_IP:-127.0.0.1}:18081:8080"
+    environment:
+      CHECKIN_ADMIN_PASSWORD_HASH: "${CHECKIN_ADMIN_PASSWORD_HASH:?set CHECKIN_ADMIN_PASSWORD_HASH}"
+      CHECKIN_AUTH_COOKIE_SECURE: "${CHECKIN_AUTH_COOKIE_SECURE:-false}"
+      CHECKIN_BASE_URL: "${CHECKIN_BASE_URL:?set CHECKIN_BASE_URL}"
+      CHECKIN_DATA_DIR: /data
+      CHECKIN_LOGIN_LIMIT_BLOCK_SECONDS: 900
+      CHECKIN_LOGIN_LIMIT_MAX_ATTEMPTS: 5
+      CHECKIN_LOGIN_LIMIT_WINDOW_SECONDS: 300
+      CHECKIN_SERVICE_TIMEZONE: Asia/Shanghai
+      CHECKIN_SCHEDULER_INTERVAL_SECONDS: 60
+      CHECKIN_SCHEDULER_RETRY_LIMIT: 3
+      CHECKIN_REQUEST_TIMEOUT_SECONDS: 20
+    volumes:
+      - ./data:/data
+```
+
+然后启动服务：
+
 ```bash
-docker compose --env-file .env up -d --build
+docker compose --env-file .env up -d
 ```
 
 打开 `http://127.0.0.1:18081/`。
