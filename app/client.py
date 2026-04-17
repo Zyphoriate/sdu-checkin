@@ -5,13 +5,21 @@ from typing import Any
 import httpx
 
 
+_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/135.0.0.0 Safari/537.36"
+)
+
+
 class RemoteApiError(RuntimeError):
     """Raised when the remote check-in system rejects a request."""
 
 
 class CheckInClient:
     def __init__(self, base_url: str, timeout_seconds: float) -> None:
-        self._base_url = f"{base_url}/api"
+        self._origin = base_url.rstrip("/")
+        self._base_url = f"{self._origin}/api"
         self._timeout = httpx.Timeout(timeout_seconds, connect=min(timeout_seconds, 10.0))
 
     def login(self, student_no: str, password: str) -> dict[str, Any]:
@@ -51,7 +59,7 @@ class CheckInClient:
         with httpx.Client(
             base_url=self._base_url,
             timeout=self._timeout,
-            headers={"User-Agent": "multi-user-auto-checkin/1.0"},
+            headers=self._default_headers(),
         ) as client:
             try:
                 response = client.request(method, path, **kwargs)
@@ -69,6 +77,15 @@ class CheckInClient:
         if body.get("code") != 200:
             raise RemoteApiError(body.get("message") or "远程系统返回错误")
         return body.get("data")
+
+    def _default_headers(self) -> dict[str, str]:
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Origin": self._origin,
+            "Referer": f"{self._origin}/",
+            "User-Agent": _BROWSER_USER_AGENT,
+        }
 
     @staticmethod
     def _auth_headers(token: str) -> dict[str, str]:

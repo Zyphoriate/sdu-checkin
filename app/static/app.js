@@ -76,7 +76,7 @@ function validatePayload(payload, isEditing) {
     return "新增账号时必须填写密码。";
   }
   if (!payload.schedule_time) {
-    return "请先填写每日执行时间。";
+    return "请先填写每日执行基准时间。";
   }
   if (payload.desired_status === "不在校") {
     if (!payload.off_campus_city) {
@@ -299,7 +299,7 @@ function renderUsers(users) {
               <span>${escapeHtml(user.student_no)}</span>
             </div>
           </td>
-          <td>${escapeHtml(user.schedule_time)}</td>
+          <td>${escapeHtml(user.schedule_time)} 起随机</td>
           <td class="user-target">${targetText}</td>
           <td class="meta-text">${strategyText}</td>
           <td class="status-cell">

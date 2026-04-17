@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -8,6 +9,51 @@ from .client import CheckInClient
 from .crypto import SecretBox
 from .db import Repository
 from .models import RunRecord, UserRecord
+
+
+_FINGERPRINT_PAGE_STAY_MS = 4862
+_SCHEDULE_RANDOM_WINDOW_MINUTES = 20
+_FINGERPRINT_MOUSE_POINTS_TEMPLATE: tuple[tuple[int, int, int], ...] = (
+    (744, 178, 0),
+    (743, 179, 150),
+    (743, 179, 305),
+    (743, 179, 455),
+    (743, 182, 605),
+    (743, 182, 755),
+    (743, 182, 906),
+    (709, 197, 1056),
+    (513, 246, 1206),
+    (484, 247, 1377),
+    (481, 254, 1539),
+    (465, 314, 1689),
+    (465, 315, 1840),
+    (465, 315, 1991),
+    (465, 315, 2141),
+    (465, 315, 2291),
+    (465, 315, 2442),
+    (465, 315, 2591),
+    (465, 315, 2742),
+    (465, 315, 2892),
+    (465, 315, 3042),
+    (465, 315, 3193),
+    (465, 315, 3343),
+    (465, 315, 3494),
+    (487, 369, 3644),
+    (502, 427, 3795),
+    (506, 458, 3944),
+    (510, 466, 4095),
+    (510, 466, 4246),
+    (510, 466, 4396),
+)
+_FINGERPRINT_STATIC_FIELDS: dict[str, Any] = {
+    "click_offset_x": -8.4,
+    "click_offset_y": 1.2,
+    "screen_resolution": "1536x864",
+    "timezone_offset": -480,
+    "browser_lang": "zh-CN",
+    "touch_points": 0,
+    "has_mouse": 1,
+}
 
 
 class CheckInService:
@@ -36,7 +82,7 @@ class CheckInService:
         for user in self._repository.list_users():
             if not user.enabled:
                 continue
-            if current_time.strftime("%H:%M") < user.schedule_time:
+            if current_time < self._scheduled_time_for_day(user, current_time):
                 continue
             attempt_count, has_terminal = self._repository.get_scheduler_attempt_summary(
                 user.id,
@@ -53,8 +99,11 @@ class CheckInService:
             raise LookupError("用户不存在")
         return self._execute_checkin(user, "manual", self._now(now))
 
-    def build_payload(self, user: UserRecord) -> dict[str, Any]:
-        payload: dict[str, Any] = {"status": user.desired_status}
+    def build_payload(self, user: UserRecord, now: datetime | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "status": user.desired_status,
+            "_fp": self._build_fingerprint(self._now(now)),
+        }
         if user.desired_status == "不在校":
             payload["off_campus_city"] = user.off_campus_city
             payload["off_campus_district"] = user.off_campus_district
@@ -63,7 +112,7 @@ class CheckInService:
 
     def _execute_checkin(self, user: UserRecord, triggered_by: str, now: datetime) -> RunRecord:
         run_date = now.date().isoformat()
-        desired_payload = self.build_payload(user)
+        desired_payload = self.build_payload(user, now)
         created_at = now.isoformat()
         try:
             password = self._secret_box.decrypt(user.password_ciphertext)
@@ -135,3 +184,39 @@ class CheckInService:
             and (existing_status.get("off_campus_reason") or "").strip()
             == (desired_payload.get("off_campus_reason") or "").strip()
         )
+
+    def _build_fingerprint(self, now: datetime) -> dict[str, Any]:
+        submit_time_ms = int(now.timestamp() * 1000)
+        page_start_ms = submit_time_ms - _FINGERPRINT_PAGE_STAY_MS
+        mouse_points = [
+            {
+                "x": x,
+                "y": y,
+                "t": page_start_ms + offset_ms,
+            }
+            for x, y, offset_ms in _FINGERPRINT_MOUSE_POINTS_TEMPLATE
+        ]
+        return {
+            "page_stay_ms": _FINGERPRINT_PAGE_STAY_MS,
+            "mouse_points": mouse_points,
+            **_FINGERPRINT_STATIC_FIELDS,
+        }
+
+    def _scheduled_time_for_day(self, user: UserRecord, current_time: datetime) -> datetime:
+        hour_text, minute_text = user.schedule_time.split(":")
+        scheduled_time = current_time.replace(
+            hour=int(hour_text),
+            minute=int(minute_text),
+            second=0,
+            microsecond=0,
+        )
+        base_minutes = int(hour_text) * 60 + int(minute_text)
+        max_offset = min(_SCHEDULE_RANDOM_WINDOW_MINUTES, (23 * 60 + 59) - base_minutes)
+        offset_minutes = self._daily_schedule_offset_minutes(user, scheduled_time.date().isoformat(), max_offset)
+        return scheduled_time + timedelta(minutes=offset_minutes)
+
+    @staticmethod
+    def _daily_schedule_offset_minutes(user: UserRecord, run_date: str, max_offset: int) -> int:
+        seed = f"{user.student_no}:{run_date}".encode("utf-8")
+        digest = hashlib.sha256(seed).digest()
+        return int.from_bytes(digest[:4], "big") % (max_offset + 1)

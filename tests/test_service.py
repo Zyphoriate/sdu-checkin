@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.models import RunRecord, UserRecord
@@ -103,18 +103,20 @@ class CheckInServiceTests(unittest.TestCase):
         )
         repository = FakeRepository([user])
         service = CheckInService(repository, FakeSecretBox(), FakeClient(), "Asia/Shanghai", 3)
+        now = datetime(2026, 4, 14, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
 
-        payload = service.build_payload(user)
+        payload = service.build_payload(user, now)
 
-        self.assertEqual(
-            payload,
-            {
-                "status": "不在校",
-                "off_campus_city": "杭州市",
-                "off_campus_district": "萧山区",
-                "off_campus_reason": "外出学习",
-            },
-        )
+        self.assertEqual(payload["status"], "不在校")
+        self.assertEqual(payload["off_campus_city"], "杭州市")
+        self.assertEqual(payload["off_campus_district"], "萧山区")
+        self.assertEqual(payload["off_campus_reason"], "外出学习")
+        fingerprint = payload["_fp"]
+        self.assertEqual(fingerprint["page_stay_ms"], 4862)
+        self.assertEqual(len(fingerprint["mouse_points"]), 30)
+        expected_start = int(now.timestamp() * 1000) - 4862
+        self.assertEqual(fingerprint["mouse_points"][0]["t"], expected_start)
+        self.assertEqual(fingerprint["mouse_points"][-1]["t"], expected_start + 4396)
 
     def test_manual_run_skips_when_today_already_matches(self) -> None:
         user = make_user(
@@ -156,18 +158,48 @@ class CheckInServiceTests(unittest.TestCase):
         run = service.run_user_now(1, datetime(2026, 4, 14, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
 
         self.assertEqual(run.outcome, "success")
-        self.assertEqual(client.submitted_payloads, [{"status": "在校"}])
+        submitted_payload = client.submitted_payloads[0]
+        self.assertEqual(submitted_payload["status"], "在校")
+        self.assertIn("_fp", submitted_payload)
+        mouse_points = submitted_payload["_fp"]["mouse_points"]
+        self.assertEqual(mouse_points[1]["t"] - mouse_points[0]["t"], 150)
+        self.assertEqual(mouse_points[-1]["t"] - mouse_points[0]["t"], 4396)
 
-    def test_scheduler_respects_schedule_time(self) -> None:
+    def test_scheduler_runs_at_daily_randomized_time(self) -> None:
         user = make_user(schedule_time="08:30")
         repository = FakeRepository([user])
         client = FakeClient()
         service = CheckInService(repository, FakeSecretBox(), client, "Asia/Shanghai", 3)
+        current_day = datetime(2026, 4, 14, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        scheduled_time = service._scheduled_time_for_day(user, current_day)
 
-        runs = service.run_due_users(datetime(2026, 4, 14, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
+        runs = service.run_due_users(scheduled_time - timedelta(minutes=1))
 
         self.assertEqual(runs, [])
         self.assertEqual(client.submitted_payloads, [])
+
+        runs = service.run_due_users(scheduled_time)
+
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(client.submitted_payloads[0]["status"], "在校")
+
+    def test_scheduler_offset_changes_by_day(self) -> None:
+        user = make_user(schedule_time="08:30", student_no="student-randomized")
+        repository = FakeRepository([user])
+        service = CheckInService(repository, FakeSecretBox(), FakeClient(), "Asia/Shanghai", 3)
+
+        day_one = service._scheduled_time_for_day(
+            user,
+            datetime(2026, 4, 14, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        day_two = service._scheduled_time_for_day(
+            user,
+            datetime(2026, 4, 15, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+
+        self.assertNotEqual(day_one.strftime("%H:%M"), day_two.strftime("%H:%M"))
+        self.assertGreaterEqual(day_one.strftime("%H:%M"), "08:30")
+        self.assertGreaterEqual(day_two.strftime("%H:%M"), "08:30")
 
 
 if __name__ == "__main__":

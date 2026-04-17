@@ -74,8 +74,9 @@
             </label>
 
             <label>
-              <span>每日执行时间</span>
+              <span>每日执行基准时间</span>
               <input id="scheduleTimeInput" name="schedule_time" type="time" required value="07:30" />
+              <small>系统会从这个时间开始，在之后最多 20 分钟内挑一个时刻执行；每天都会重新计算。</small>
             </label>
 
             <label>
@@ -132,7 +133,7 @@
               <thead>
                 <tr>
                   <th>账号</th>
-                  <th>时间</th>
+                  <th>基准时间</th>
                   <th>目标状态</th>
                   <th>策略</th>
                   <th>状态</th>
