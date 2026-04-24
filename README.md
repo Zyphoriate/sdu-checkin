@@ -127,3 +127,10 @@ python3 -m unittest discover -s tests
 
 - Moving the service to another machine requires migrating both the database and Fernet key if you want existing encrypted credentials to remain usable.
 - The scheduler is in-process; do not run multiple active instances against the same database unless you add leader election or locking.
+
+## Changelog
+
+### 2026-04-24
+
+- **Slider CAPTCHA bypass**: upstream system added a slider verification step before check-in submission. Added `slider_challenge` / `slider_verify` API calls and simulated human-like drag trajectories.
+- **Extended browser fingerprint**: `_fp` payload now includes canvas hash, WebGL renderer, platform, device memory, CPU cores, color depth, pixel ratio, audio hash, math hash, and webdriver flag to match the latest upstream detection.

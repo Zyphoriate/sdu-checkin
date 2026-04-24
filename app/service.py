@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import random
+import time
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -53,6 +55,16 @@ _FINGERPRINT_STATIC_FIELDS: dict[str, Any] = {
     "browser_lang": "zh-CN",
     "touch_points": 0,
     "has_mouse": 1,
+    "canvas_hash": "a1b2c3d4",
+    "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics 630, OpenGL 4.6)",
+    "platform": "Win32",
+    "device_memory": "8",
+    "cpu_cores": "8",
+    "color_depth": "24",
+    "pixel_ratio": "1.25",
+    "audio_hash": "35.7f1e8a2c",
+    "math_hash": "4b6d2a1e",
+    "webdriver": "0",
 }
 
 
@@ -142,6 +154,9 @@ class CheckInService:
                         remote_snapshot=today_status,
                         created_at=created_at,
                     )
+            nonce = self._client.slider_challenge(token)
+            trajectories = self._generate_slider_trajectories()
+            self._client.slider_verify(token, trajectories, nonce)
             result = self._client.submit_checkin(token, desired_payload)
             return self._repository.create_run(
                 user_id=user.id,
@@ -214,6 +229,25 @@ class CheckInService:
         max_offset = min(_SCHEDULE_RANDOM_WINDOW_MINUTES, (23 * 60 + 59) - base_minutes)
         offset_minutes = self._daily_schedule_offset_minutes(user, scheduled_time.date().isoformat(), max_offset)
         return scheduled_time + timedelta(minutes=offset_minutes)
+
+    @staticmethod
+    def _generate_slider_trajectories() -> list[dict[str, int]]:
+        rng = random.Random(time.monotonic_ns())
+        target = rng.randint(87, 96)
+        now_ms = int(time.time() * 1000)
+        points: list[dict[str, int]] = [{"x": 0, "t": now_ms}]
+        x = 0
+        t = 0
+        while x < target:
+            remaining = target - x
+            step = max(1, min(remaining, rng.randint(2, 8)))
+            if remaining <= 5:
+                step = remaining
+            x += step
+            t += rng.randint(25, 70)
+            points.append({"x": x, "t": now_ms + t})
+        points.append({"x": target, "t": now_ms + t + rng.randint(30, 80)})
+        return points
 
     @staticmethod
     def _daily_schedule_offset_minutes(user: UserRecord, run_date: str, max_offset: int) -> int:

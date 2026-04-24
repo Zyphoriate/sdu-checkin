@@ -55,6 +55,24 @@ class CheckInClient:
             raise RemoteApiError("打卡返回格式异常")
         return payload
 
+    def slider_challenge(self, token: str) -> str:
+        payload = self._request(
+            "POST",
+            "/attendance/slider-challenge",
+            headers=self._auth_headers(token),
+        )
+        if not isinstance(payload, dict) or "nonce" not in payload:
+            raise RemoteApiError("滑块挑战未返回 nonce")
+        return str(payload["nonce"])
+
+    def slider_verify(self, token: str, trajectories: list[dict], nonce: str) -> None:
+        self._request(
+            "POST",
+            "/attendance/slider-verify",
+            headers=self._auth_headers(token),
+            json={"trajectories": trajectories, "nonce": nonce},
+        )
+
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         with httpx.Client(
             base_url=self._base_url,
